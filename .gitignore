@@ -1,0 +1,22 @@
+# Virtual environment
+venv/
+ENV/
+
+# File di configurazione locali
+.env
+
+# Cartelle dati generate
+data/ratings.json
+
+# File pycache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# File di log
+*.log
+
+# File di sistema
+.DS_Store
+Thumbs.db
