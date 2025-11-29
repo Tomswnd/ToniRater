@@ -1,216 +1,168 @@
 # ToniRater 🤖⭐
 
-[Python >= 3.10] - Bot Telegram per votare video in gruppo.
-Gli utenti votano da 1 a 5 ⭐ tramite bottoni inline. 
-Se un video riceve almeno 3 voti e la media ≤ 2, il bot lo elimina automaticamente.
+[Python >= 3.10] - Bot Telegram per votare video e link nei gruppi.
+Gli utenti votano da 1 a 5 ⭐ tramite bottoni inline. I dati sono salvati su **SQLite** per garantire performance e integrità.
+Include un sistema di **classifiche** (Top & Flop users) e cancellazione automatica dei contenuti di bassa qualità.
+
+## ✨ Funzionalità
+
+* **Votazione Inline:** Sondaggi da 1 a 5 stelle sotto ogni video/link.
+* **Database SQLite:** Salvataggio persistente di utenti, video e voti.
+* **Moderazione Automatica:** Se un video riceve **≥ 3 voti** e ha una media **≤ 2.0**, viene eliminato e sostituito da un avviso.
+* **Anti-Autovoto:** Impedisce agli utenti di votare i propri contenuti.
+* **Classifiche (`/classifica`):** Mostra la Top 3 degli utenti per qualità e il peggiore ("Last Place of Shame").
+* **Supporto Link:** Riconosce video inviati direttamente e link (YouTube, TikTok, Instagram, ecc.) grazie a `yt-dlp`.
 
 ---
 
 ## 📂 Struttura del progetto
 
+```text
 ToniRater/
-
-├── bot.py                  # File principale per avviare il bot
-
-├── config.py               # Legge il token da variabile d'ambiente
-
-├── requirements.txt        # Dipendenze Python
-
+├── bot.py                # File principale per avviare il bot
+├── config.py             # Gestione configurazione e variabili d'ambiente
+├── requirements.txt      # Dipendenze Python
 ├── logic/
-
 │   ├── __init__.py
-
-│   ├── rating_manager.py   # Gestione voti, media e cancellazione
-
-│   └── handlers.py         # Handler video e callback bottoni
-
+│   ├── db_setup.py       # Script inizializzazione Database SQLite
+│   ├── rating_manager.py # Logica CRUD (Voti, Utenti, Video, Classifiche)
+│   └── handlers.py       # Handler messaggi, comandi e callback
 ├── data/
-
-│   └── ratings.json        # Dati votazioni (JSON)
-
-└── test/
-
-    ├── __init__.py
-
-    ├── test_rating_manager.py
-
-    └── test_handlers_logic.py
+│   └── tonirater.db      # Database SQLite (generato automaticamente)
+└── test/                 # Unit test
+```
 
 ---
 
 ## ⚡ Installazione
 
-1. Clona il progetto:
-
+1.  **Clona il progetto:**
+    ```bash
     git clone <url_del_progetto>
     cd ToniRater
+    ```
 
-2. Crea un virtual environment (opzionale):
-
+2.  **Crea un virtual environment (consigliato):**
+    ```bash
+    # Windows
     python -m venv venv
-    venv\Scripts\activate     # Windows
-    source venv/bin/activate  # Linux/Mac
+    venv\Scripts\activate
 
-3. Installa le dipendenze:
+    # Linux/Mac
+    python3 -m venv venv
+    source venv/bin/activate
+    ```
 
-    py -m pip install -r requirements.txt
+3.  **Installa le dipendenze:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 ---
 
-## 🔒 Configurazione del BOT TOKEN
+## 🔒 Configurazione
 
-### 1️⃣ Usare variabili d'ambiente
+### 1. Variabili d'Ambiente (`.env`)
+Il bot richiede un token Telegram. Crea un file `.env` nella root del progetto:
 
-- **Windows temporaneo (PowerShell)**:
+```ini
+BOT_TOKEN=il_tuo_token_telegram_qui
+```
 
-    set BOT_TOKEN="il_tuo_token"
-    py bot.py
+### 2. File `.gitignore`
+Assicurati di **non** caricare il database o il file .env su Git. Il tuo `.gitignore` dovrebbe contenere:
 
-- **Windows permanente**:
-  - Vai su “Variabili d’ambiente” → Nuova variabile utente
-  - Nome: `BOT_TOKEN`, Valore: `il_tuo_token`
-  - Riavvia PowerShell → py bot.py
-
-- **Linux/Mac temporaneo**:
-
-    export BOT_TOKEN="il_tuo_token"
-    python3 bot.py
-
-- **Linux/Mac permanente**:
-  - Aggiungi a `~/.bashrc` o `~/.zshrc`:
-    
-    export BOT_TOKEN="il_tuo_token"
-    
-  - Poi aggiorna la shell:
-
-    source ~/.bashrc   # oppure source ~/.zshrc
-
----
-
-### 2️⃣ Usare file `.env` (consigliato)
-
-1. Installa la libreria `python-dotenv`:
-
-    py -m pip install python-dotenv
-
-2. Crea `.env` nella root del progetto:
-
-    BOT_TOKEN=il_tuo_token
-
-3. Aggiorna `config.py`:
-
-    ```python
-    from dotenv import load_dotenv
-    import os
-
-    load_dotenv()
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-
-    if not BOT_TOKEN:
-        raise ValueError("Errore: la variabile d'ambiente BOT_TOKEN non è impostata!")
-    ```
-
-4. Aggiungi `.env` a `.gitignore` per non committarlo:
-
-    ```
-    .env
-    data/ratings.json
-    venv/
-    __pycache__/
-    *.log
-    ```
+```text
+.env
+venv/
+__pycache__/
+data/*.db
+data/*.db-journal
+```
 
 ---
 
 ## 🚀 Avvio del bot
 
-Nel terminale:
+Lancia il bot. Al primo avvio, il database `data/tonirater.db` verrà creato automaticamente.
 
-    py bot.py
-    # oppure su Linux: python3 bot.py
-
----
-
-## 🎯 Funzionamento
-
-1. Quando un **video** viene inviato nel gruppo:
-   - Il bot crea un messaggio di sondaggio con bottoni ⭐ 1–5
-2. Quando un utente vota:
-   - il voto viene registrato
-   - la **media** e il **numero di voti** vengono aggiornati
-3. Se un video riceve almeno 3 voti e media ≤ 2:
-   - il video viene eliminato
-   - il messaggio viene aggiornato con:
-     "Video eliminato (media ≤ 2 dopo almeno 3 voti)"
+```bash
+python bot.py
+```
 
 ---
 
-## 🧪 Test del progetto
+## 🎮 Comandi e Utilizzo
 
-I test verificano la logica senza Telegram:
+### Votazione
+* Basta inviare un **video** o un **link** (YouTube/TikTok/ecc) nel gruppo.
+* Il bot risponderà con una tastiera per votare.
+* La media e il conteggio voti si aggiornano in tempo reale.
 
-    py -m pytest -v
+### Comandi Disponibili
+* `/classifica` (o `/top`): Mostra gli utenti con la media voti più alta (minimo 3 video inviati) e l'utente con la media peggiore 🍅.
 
-> Richiede `pytest-asyncio` perché le funzioni sono asincrone
-
----
-
-## ⚙️ Migliorie opzionali
-
-- Bloccare l’autovoto (utente non può votare il proprio video)
-- Comando `/stats` per visualizzare le medie
-- Pulizia automatica voti vecchi in `ratings.json`
-- Log dettagliato dei voti
+### Regole di Cancellazione
+Un contenuto viene rimosso automaticamente se:
+1.  Ha ricevuto almeno **3 voti**.
+2.  La media voti è **≤ 2.0**.
 
 ---
 
-## 💻 Requisiti
+## 🖥️ Deploy su Server Linux (Systemd)
 
-- Python ≥ 3.10
-- Librerie:
-  - python-telegram-bot
-  - pytest
-  - pytest-asyncio
-  - python-dotenv
+Per eseguire il bot in background e riavviarlo automaticamente.
 
----
+1.  **Modifica i permessi (Importante per SQLite):**
+    L'utente che esegue il bot deve poter scrivere nella cartella `data`.
+    ```bash
+    mkdir -p data
+    # Se il bot gira come tuo_utente, assicurati di essere il proprietario
+    chown -R tuo_utente:tuo_utente data/
+    ```
 
-## 📝 Note
-
-- Il bot deve avere **permessi di amministratore** nel gruppo per eliminare i video
-- `ratings.json` contiene i voti in questo formato:
-
-    {
-      "12345": { "111": 2, "222": 4, "333": 1 }
-    }
-
----
-
-## 🖥️ Avvio automatico su server Linux con `.env`
-
-1. Crea il servizio systemd:
-
+2.  **Crea il servizio:**
+    ```bash
     sudo nano /etc/systemd/system/tonirater.service
+    ```
 
-Contenuto esempio:
+3.  **Incolla la configurazione:**
+    Modifica `tuo_utente` e i percorsi.
 
+    ```ini
     [Unit]
     Description=ToniRater Bot
     After=network.target
 
     [Service]
     User=tuo_utente
+    Group=tuo_utente
     WorkingDirectory=/home/tuo_utente/ToniRater
     EnvironmentFile=/home/tuo_utente/ToniRater/.env
-    ExecStart=/usr/bin/python3 /home/tuo_utente/ToniRater/bot.py
+    ExecStart=/home/tuo_utente/ToniRater/venv/bin/python3 bot.py
     Restart=always
 
     [Install]
     WantedBy=multi-user.target
+    ```
 
-2. Avvia e abilita il servizio:
-
+4.  **Avvia:**
+    ```bash
     sudo systemctl daemon-reload
     sudo systemctl enable tonirater
     sudo systemctl start tonirater
-    sudo systemctl status tonirater
+    ```
+
+---
+
+## 💻 Requisiti Tecnici
+
+* Python ≥ 3.10
+* Librerie principali:
+    * `python-telegram-bot`
+    * `yt-dlp` (per verifica link video)
+    * `python-dotenv`
+* SQLite (incluso in Python)
+
+## 📝 Note
+* Il bot deve essere **Amministratore** del gruppo con permesso di **Eliminare messaggi** per far funzionare la moderazione automatica.

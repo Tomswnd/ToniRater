@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 
-from logic.rating_manager import add_rating, get_stats, should_delete
+from logic.old_rating_manager import add_rating, get_stats, should_delete
 
 @pytest.mark.asyncio
 async def test_simulated_vote_flow():

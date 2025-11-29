@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from logic.rating_manager import add_rating, get_stats, should_delete
+from logic.old_rating_manager import add_rating, get_stats, should_delete
 import json
 import os
 
@@ -14,7 +14,7 @@ def cleanup():
         json.dump({}, f)
 
     # Patch rating_manager per usare il file di test
-    import logic.rating_manager as rm
+    import logic.old_rating_manager as rm
     rm.RATINGS_FILE = TEST_FILE
 
     yield

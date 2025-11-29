@@ -1,7 +1,7 @@
 # Virtual environment
 venv/
 ENV/
-
+data/*.db
 # File di configurazione locali
 .env
 
