@@ -189,3 +189,74 @@ async def get_worst_user(chat_id: int, min_videos=3):
 
         cursor.execute(query, (chat_id, min_videos))
         return cursor.fetchone()
+
+async def get_user_id_by_username(username: str):
+    """Trova l'ID di un utente partendo dal suo @username."""
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        # Rimuove l'@ se l'admin lo ha digitato
+        clean_username = username.replace("@", "")
+        cursor.execute("SELECT user_id FROM users WHERE username = ? COLLATE NOCASE", (clean_username,))
+        row = cursor.fetchone()
+        return row[0] if row else None
+
+async def toggle_clown_status(user_id: int):
+    """
+    Attiva/Disattiva la modalità clown.
+    Se attivata, elimina retroattivamente i voti da 1 e 2 stelle dell'utente.
+    Ritorna True se è diventato clown, False se è stato rimosso.
+    """
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT user_id FROM clowns WHERE user_id = ?", (user_id,))
+        is_currently_clown = cursor.fetchone() is not None
+
+        if is_currently_clown:
+            # Rimuovi da clown (Perdono)
+            cursor.execute("DELETE FROM clowns WHERE user_id = ?", (user_id,))
+            status = False
+        else:
+            # Aggiungi a clown (Condanna)
+            cursor.execute("INSERT INTO clowns (user_id) VALUES (?)", (user_id,))
+            # Cancella i suoi vecchi voti da 1 e 2 stelle
+            cursor.execute("DELETE FROM votes WHERE voter_id = ? AND rating IN (1, 2)", (user_id,))
+            status = True
+
+        conn.commit()
+        return status
+
+async def is_clown(user_id: int) -> bool:
+    """Controlla se un utente è nella lista dei clown."""
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT 1 FROM clowns WHERE user_id = ?", (user_id,))
+        return cursor.fetchone() is not None
+
+
+async def delete_user_votes(user_id: int, ratings: list[int] = None):
+    """
+    Deletes votes for a specific user.
+    If 'ratings' is provided (e.g., [1], or [1, 2]), it only deletes those specific scores.
+    If 'ratings' is None, it deletes ALL votes made by the user.
+    Returns the number of deleted votes.
+    """
+    with _get_conn() as conn:
+        cursor = conn.cursor()
+
+        if ratings:
+            # Create a dynamic string of placeholders, e.g., "?, ?" if the list has two items
+            placeholders = ', '.join('?' for _ in ratings)
+            query = f"DELETE FROM votes WHERE voter_id = ? AND rating IN ({placeholders})"
+
+            # Combine the user_id and the ratings list into a single tuple of parameters
+            params = [user_id] + ratings
+            cursor.execute(query, tuple(params))
+        else:
+            # Delete all votes for this user
+            cursor.execute("DELETE FROM votes WHERE voter_id = ?", (user_id,))
+
+        # Get the number of rows that were deleted
+        deleted_count = cursor.rowcount
+        conn.commit()
+
+        return deleted_count

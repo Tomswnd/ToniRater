@@ -51,6 +51,18 @@ def init_db():
         )
     ''')
 
+    # --- 4. Tabella CLOWNS (Troll e Spammer) ---
+    # Serve per marchiare gli utenti a cui non verranno contati i voti
+    cursor.execute('''
+                   CREATE TABLE IF NOT EXISTS clowns
+                   (
+                       user_id
+                       INTEGER
+                       PRIMARY
+                       KEY
+                   )
+                   ''')
+
     conn.commit()
     conn.close()
     print("✅ Database inizializzato con successo!")

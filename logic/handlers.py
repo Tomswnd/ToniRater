@@ -5,11 +5,14 @@ import time
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
 from telegram.ext import ContextTypes, CallbackQueryHandler, MessageHandler, filters, CallbackContext, CommandHandler
 from logic.rating_manager import get_leaderboard, get_worst_user
-
+from logic.rating_manager import delete_user_votes, get_user_id_by_username
 from config import BOT_TOKEN
 from logic.rating_manager import add_rating, get_stats, should_delete, register_video, upsert_user
 from yt_dlp import YoutubeDL
-
+from logic.rating_manager import (
+    add_rating, get_stats, should_delete, register_video, upsert_user,
+    is_clown, toggle_clown_status, get_user_id_by_username
+)
 # Logger
 logger = logging.getLogger(__name__)
 
@@ -148,6 +151,12 @@ async def rate_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
     chat_id = query.message.chat_id
 
+    # --- CLOWN INTERCEPTOR ---
+    if await is_clown(user_id):
+        await query.answer("Honk! 🤡", show_alert=True)
+        return
+    # -------------------------
+
     # 1. Salva/Aggiorna Utente nel DB
     await upsert_user(user_id, user.first_name, user.username)
 
@@ -265,6 +274,108 @@ async def cmd_classifica(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text += f"\n\n<i>(Minimo {min_videos} video per apparire)</i>"
 
     await update.message.reply_text(text, parse_mode="HTML")
+
+
+async def cmd_clown(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user_id = update.message.from_user.id
+
+    # Controlla se chi usa il comando è un amministratore del gruppo
+    member = await context.bot.get_chat_member(chat_id, user_id)
+    if member.status not in ['administrator', 'creator']:
+        await update.message.reply_text("❌ Solo gli admin possono usare questo comando.")
+        return
+
+    # Controlla se è stato fornito un username
+    if not context.args:
+        await update.message.reply_text("⚠️ Uso corretto: /clown @username")
+        return
+
+    target_username = context.args[0]
+    target_id = await get_user_id_by_username(target_username)
+
+    if not target_id:
+        await update.message.reply_text(
+            "❌ Utente non trovato nel database (deve aver interagito col bot almeno una volta).")
+        return
+
+    # Attiva o disattiva la modalità clown
+    is_now_clown = await toggle_clown_status(target_id)
+
+    if is_now_clown:
+        await update.message.reply_text(
+            f"🎪 <b>{target_username} è ora un CLOWN! 🤡</b>\n"
+            f"I suoi vecchi voti da 1 e 2 stelle sono stati polverizzati e i suoi futuri voti verranno ignorati.",
+            parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(
+            f"✅ <b>{target_username} è stato perdonato.</b>\n"
+            f"Non è più un clown e i suoi voti torneranno a contare.",
+            parse_mode="HTML"
+        )
+
+
+from telegram import Update
+from telegram.ext import ContextTypes
+from logic.rating_manager import delete_user_votes, get_user_id_by_username
+
+
+async def cmd_delvotes(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    user_id = update.message.from_user.id
+
+    # Security check: ONLY the group creator (owner)
+    member = await context.bot.get_chat_member(chat_id, user_id)
+    if member.status != 'creator':
+        await update.message.reply_text("❌ Questo comando è troppo OP. Solo il Creatore del gruppo può usarlo.")
+        return
+
+    # Check if they provided at least a username
+    if len(context.args) < 1:
+        await update.message.reply_text(
+            "⚠️ Uso corretto:\n"
+            "/delvotes @username (cancella tutti i voti)\n"
+            "/delvotes @username 1 (cancella solo i voti da 1⭐)\n"
+            "/delvotes @username 1 2 (cancella i voti da 1⭐ e 2⭐)"
+        )
+        return
+
+    target_username = context.args[0]
+    target_id = await get_user_id_by_username(target_username)
+
+    if not target_id:
+        await update.message.reply_text("❌ Utente non trovato nel database.")
+        return
+
+    # Parse the specific ratings they want to delete, if any were provided
+    ratings_to_delete = None
+    if len(context.args) > 1:
+        try:
+            # Convert the extra arguments into a list of integers
+            ratings_to_delete = [int(arg) for arg in context.args[1:]]
+        except ValueError:
+            await update.message.reply_text("❌ I voti da eliminare devono essere numeri (es. 1 2).")
+            return
+
+    # Call the flexible function
+    deleted_count = await delete_user_votes(target_id, ratings=ratings_to_delete)
+
+    # Send the confirmation message
+    if ratings_to_delete:
+        voti_str = ", ".join([str(r) for r in ratings_to_delete])
+        await update.message.reply_text(
+            f"🧹 <b>Pulizia completata per {target_username}</b>\n"
+            f"Sono stati eliminati <b>{deleted_count}</b> voti (valori: {voti_str}⭐).",
+            parse_mode="HTML"
+        )
+    else:
+        await update.message.reply_text(
+            f"💥 <b>Reset totale per {target_username}</b>\n"
+            f"Tutti i suoi <b>{deleted_count}</b> voti sono stati eliminati dal database.",
+            parse_mode="HTML"
+        )
+
 # ---------------------------------------------------------
 # Registrazione handler
 # ---------------------------------------------------------
@@ -276,3 +387,5 @@ def register_handlers(app):
     app.add_handler(MessageHandler(video_filter, handle_id))
     app.add_handler(CallbackQueryHandler(rate_callback, pattern="^rate:"))
     app.add_handler(CommandHandler("classifica", cmd_classifica))
+    app.add_handler(CommandHandler("clown", cmd_clown))
+    app.add_handler(CommandHandler("delvotes", cmd_delvotes))
