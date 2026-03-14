@@ -9,10 +9,16 @@ from logic.rating_manager import delete_user_votes, get_user_id_by_username
 from config import BOT_TOKEN
 from logic.rating_manager import add_rating, get_stats, should_delete, register_video, upsert_user
 from yt_dlp import YoutubeDL
+from telegram import Update
+from telegram.ext import ContextTypes
+from logic.rating_manager import delete_user_votes, get_user_id_by_username
 from logic.rating_manager import (
     add_rating, get_stats, should_delete, register_video, upsert_user,
     is_clown, toggle_clown_status, get_user_id_by_username
 )
+from telegram import Update
+from telegram.ext import ContextTypes
+from logic.rating_manager import delete_user_votes, get_user_id_by_username
 # Logger
 logger = logging.getLogger(__name__)
 
@@ -280,23 +286,44 @@ async def cmd_clown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_id = update.message.from_user.id
 
-    # Controlla se chi usa il comando è un amministratore del gruppo
+    # Security check
     member = await context.bot.get_chat_member(chat_id, user_id)
     if member.status not in ['administrator', 'creator']:
         await update.message.reply_text("❌ Solo gli admin possono usare questo comando.")
         return
 
-    # Controlla se è stato fornito un username
-    if not context.args:
-        await update.message.reply_text("⚠️ Uso corretto: /clown @username")
-        return
+    target_id = None
+    target_name = "L'utente"
 
-    target_username = context.args[0]
-    target_id = await get_user_id_by_username(target_username)
+    # METHOD 1: The admin replied to a message sent by the troll
+    if update.message.reply_to_message:
+        target_id = update.message.reply_to_message.from_user.id
+        target_name = update.message.reply_to_message.from_user.first_name
 
+    # METHOD 2: The admin tagged a user WITHOUT a username (Text Mention)
+    # We loop through the entities to find the hidden user_id
+    elif update.message.entities:
+        for entity in update.message.entities:
+            if entity.type == 'text_mention':
+                target_id = entity.user.id
+                target_name = entity.user.first_name
+                break
+
+    # METHOD 3: The admin typed a standard @username
+    if not target_id and context.args:
+        # Check if the first argument looks like a username
+        if context.args[0].startswith('@'):
+            target_name = context.args[0]
+            target_id = await get_user_id_by_username(target_name)
+
+    # If all 3 methods fail:
     if not target_id:
         await update.message.reply_text(
-            "❌ Utente non trovato nel database (deve aver interagito col bot almeno una volta).")
+            "⚠️ Impossibile trovare l'utente. Puoi:\n"
+            "1. Rispondere a un suo messaggio con /clown\n"
+            "2. Usare /clown @username\n"
+            "3. Menzionare il suo nome senza chiocciola"
+        )
         return
 
     # Attiva o disattiva la modalità clown
@@ -304,78 +331,96 @@ async def cmd_clown(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_now_clown:
         await update.message.reply_text(
-            f"🎪 <b>{target_username} è ora un CLOWN! 🤡</b>\n"
-            f"I suoi vecchi voti da 1 e 2 stelle sono stati polverizzati e i suoi futuri voti verranno ignorati.",
+            f"🎪 <b>{target_name} è ora un CLOWN! 🤡</b>\n"
+            f"I suoi vecchi voti da 1 e 2 stelle sono stati polverizzati e i futuri voti verranno ignorati.",
             parse_mode="HTML"
         )
     else:
         await update.message.reply_text(
-            f"✅ <b>{target_username} è stato perdonato.</b>\n"
+            f"✅ <b>{target_name} è stato perdonato.</b>\n"
             f"Non è più un clown e i suoi voti torneranno a contare.",
             parse_mode="HTML"
         )
 
-
-from telegram import Update
-from telegram.ext import ContextTypes
-from logic.rating_manager import delete_user_votes, get_user_id_by_username
 
 
 async def cmd_delvotes(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user_id = update.message.from_user.id
 
-    # Security check: ONLY the group creator (owner)
+    # Security check: ONLY the group creator
     member = await context.bot.get_chat_member(chat_id, user_id)
     if member.status != 'creator':
         await update.message.reply_text("❌ Questo comando è troppo OP. Solo il Creatore del gruppo può usarlo.")
         return
 
-    # Check if they provided at least a username
-    if len(context.args) < 1:
+    target_id = None
+    target_name = "L'utente"
+
+    # METHOD 1: The admin replied to a message sent by the troll
+    if update.message.reply_to_message:
+        target_id = update.message.reply_to_message.from_user.id
+        target_name = update.message.reply_to_message.from_user.first_name
+
+    # METHOD 2: The admin tagged a user WITHOUT a username (Text Mention)
+    elif update.message.entities:
+        for entity in update.message.entities:
+            if entity.type == 'text_mention':
+                target_id = entity.user.id
+                target_name = entity.user.first_name
+                break
+
+    # METHOD 3: The admin typed a standard @username
+    if not target_id and context.args:
+        # Check if any argument looks like a username
+        for arg in context.args:
+            if arg.startswith('@'):
+                target_name = arg
+                target_id = await get_user_id_by_username(target_name)
+                break
+
+    # If all 3 methods fail:
+    if not target_id:
         await update.message.reply_text(
-            "⚠️ Uso corretto:\n"
-            "/delvotes @username (cancella tutti i voti)\n"
-            "/delvotes @username 1 (cancella solo i voti da 1⭐)\n"
-            "/delvotes @username 1 2 (cancella i voti da 1⭐ e 2⭐)"
+            "⚠️ Impossibile trovare l'utente. Puoi:\n"
+            "1. Rispondere a un suo messaggio con /delvotes\n"
+            "2. Usare /delvotes @username\n"
+            "3. Menzionare il suo nome senza chiocciola"
         )
         return
 
-    target_username = context.args[0]
-    target_id = await get_user_id_by_username(target_username)
-
-    if not target_id:
-        await update.message.reply_text("❌ Utente non trovato nel database.")
-        return
-
-    # Parse the specific ratings they want to delete, if any were provided
-    ratings_to_delete = None
-    if len(context.args) > 1:
+    # Smart parsing for ratings to delete
+    # This grabs any valid numbers (1-5) from the command arguments
+    ratings_to_delete = []
+    for arg in context.args:
         try:
-            # Convert the extra arguments into a list of integers
-            ratings_to_delete = [int(arg) for arg in context.args[1:]]
+            val = int(arg)
+            if 1 <= val <= 5:
+                ratings_to_delete.append(val)
         except ValueError:
-            await update.message.reply_text("❌ I voti da eliminare devono essere numeri (es. 1 2).")
-            return
+            pass  # Ignore text like names or mentions
 
-    # Call the flexible function
+    # If the list is empty, we set it to None so the function knows to delete ALL votes
+    if len(ratings_to_delete) == 0:
+        ratings_to_delete = None
+
+    # Execute the deletion
     deleted_count = await delete_user_votes(target_id, ratings=ratings_to_delete)
 
-    # Send the confirmation message
+    # Send confirmation
     if ratings_to_delete:
         voti_str = ", ".join([str(r) for r in ratings_to_delete])
         await update.message.reply_text(
-            f"🧹 <b>Pulizia completata per {target_username}</b>\n"
+            f"🧹 <b>Pulizia completata per {target_name}</b>\n"
             f"Sono stati eliminati <b>{deleted_count}</b> voti (valori: {voti_str}⭐).",
             parse_mode="HTML"
         )
     else:
         await update.message.reply_text(
-            f"💥 <b>Reset totale per {target_username}</b>\n"
+            f"💥 <b>Reset totale per {target_name}</b>\n"
             f"Tutti i suoi <b>{deleted_count}</b> voti sono stati eliminati dal database.",
             parse_mode="HTML"
         )
-
 # ---------------------------------------------------------
 # Registrazione handler
 # ---------------------------------------------------------
